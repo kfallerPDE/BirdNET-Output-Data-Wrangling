@@ -1,0 +1,140 @@
+---
+title: "BirdNET Outputs Data Prep"
+author: "Kelly Faller"
+date: '2023-06-08'
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Packages
+
+
+```{r, warning=FALSE, include=FALSE}
+
+library(tidyverse)
+library(lubridate)
+library(bit64)
+library(magrittr)
+library(plyr)
+library(readr)
+library(data.table)
+library(chron)
+
+```
+
+## Create one CSV & Add Datetime
+
+This chunk of code takes your folder full of individual CSV files for each output file (in BirdNET, there is one for every analysis completed - aka you get one csv for every recording. If you record in 2 minute chunks and you process a days worth of data, you are getting thousands of csvs.) and creating one large CSV for the time period you processed. You will need to change the folder structure to reflect your own files. Set the inital Working directory to the folder that your outputs are stored in your folder structure. Remember to change the slash to the one seen below (forward slash). If you copy and paste the file path directly from your computer, this will need to be adjusted. Most often, computers use the backslash. 
+
+In this chunk of code, I am not only binding the CSVs together to form one dataset, but also incorporating more information into the dataset. BirdNET does not include any time/date information in the CSV output. To work around that, the code below feeds in the file name that is stored by the acoustic detector. Because acoustic detectors usually store their files as "DetectorID_Date_Time", we can extract that information dates and times from the name itself. 
+
+This code also renames the column titles so that they can be read by R. The BirdNET output includes parentheses and spaces, both of which R does not like. 
+
+```{r CSV Binding, include=FALSE}
+
+#clear global environment
+rm(list=ls())
+
+#folder where your BirdNet output files are stored
+setwd('D:/Acoustic Data/RF_02/BirdNET Output/5-1 5-2 and 5-3')
+
+# read file path - this tells the computer that they are all csvs 
+all_paths <-
+  list.files(path = "D:/Acoustic Data/RF_02/BirdNET Output/5-1 5-2 and 5-3",
+             pattern = "*.csv",
+             full.names = TRUE)
+
+# read file content
+all_content <-
+  all_paths %>%
+  lapply(read.table,
+         header = TRUE,
+         sep = ",",
+         encoding = "UTF-8")
+
+# read file name
+all_filenames <- all_paths %>%
+  basename() %>%
+  as.list()
+
+# combine file content list and file name list
+# AKA add a column that includes the file name
+all_lists <- mapply(c, all_content, all_filenames, SIMPLIFY = FALSE)
+
+# unlist all lists and change column name
+all_result <- rbindlist(all_lists, fill = T)
+
+# change column names
+names(all_result)[1] <- "Start_s"
+names(all_result)[2] <- "End_s"
+names(all_result)[3] <- "Scientific_Name"
+names(all_result)[4] <- "Common_Name"
+names(all_result)[5] <- "Confidence"
+names(all_result)[6] <- "File_Name"
+
+#Taking the file name and extracting three columns of info from it, detector ID, Date, and Time. 
+species_data <- all_result  %>% separate(File_Name, c("Detector_ID", "Date", "Time_Extra"), sep = "_") %>% 
+                                mutate(Time = substr(Time_Extra, 1, 6)) %>%
+                                dplyr::select(- Time_Extra) 
+
+#Putting in colons into the time column
+species_data$Time <-  times(gsub("(..)(..)(..)", "\\1:\\2:\\3", species_data$Time))
+#formatting date
+species_data$Date <-  ymd(species_data$Date)
+#creating a datetime column for use in graphics
+species_data$DateTime <- as.POSIXct(as.character(paste(species_data$Date, species_data$Time)), format="%Y-%m-%d %H:%M:%S")
+
+#final csv will be written into the folder indicated below. Make sure to change this to your own information
+write.csv(species_data,"D:/BirdNET Output Combined CSVs/RF_02_5-1_5-2_5-3.csv", row.names = FALSE)  
+
+```
+
+## Create final CSV
+
+Combining the CSVs created from above chunk and create a master CSV for graphics and analysis. This chunk is for those who are not processing all of their acoustic data at once. To run BirdNET most efficiently, you need to break up your recordings into smaller playlists. Those will be processed in the first chunk of code to get datetime information, detector name, etc. Once you want to combine all outputs into one final CSV, use this chunk. Again, change your folder structure to reflect your own files.
+
+I personally manually add in the in Site, Station, and Deployment first in each CSV before running this. That can be automated in the future.
+
+```{r CSV Binding, include=FALSE}
+
+#clear global environment
+rm(list=ls())
+
+setwd('C:/Users/kfaller/Documents/GitHub/Acoustics/Species Identification Files')
+
+# read file path
+all_paths <-
+  list.files(path = "C:/Users/kfaller/Documents/GitHub/Acoustics/Species Identification Files",
+             pattern = "*.csv",
+             full.names = TRUE)
+
+# read file content
+all_content <-
+  all_paths %>%
+  lapply(read.table,
+         header = TRUE,
+         sep = ",",
+         encoding = "UTF-8")
+
+# read file name
+all_filenames <- all_paths %>%
+  basename() %>%
+  as.list()
+
+# combine file content list and file name list
+all_lists <- mapply(c, all_content, all_filenames, SIMPLIFY = FALSE)
+
+# unlist all lists and change column name
+all_result <- rbindlist(all_lists, fill = T)
+# change column name
+names(all_result)[13] <- "File_Name"
+
+write.csv(all_result,"C:/Users/kfaller/Documents/GitHub/Acoustics/Species Id Data.csv", row.names = FALSE)  
+
+```
+
+
